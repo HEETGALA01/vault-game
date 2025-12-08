@@ -1,0 +1,26 @@
+# Render Blueprint - Vault Breaker Server
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: vault-breaker-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: EMAIL_SERVICE
+        value: gmail
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Vault Breaker
