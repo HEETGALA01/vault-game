@@ -517,10 +517,33 @@ class VaultBreaker {
             if (nameInput) nameInput.value = name;
             if (emailInput) emailInput.value = email;
             
-            // Auto-start the game after a short delay
-            setTimeout(() => {
-                this.startGame();
-            }, 500);
+            // Wait for socket to connect before auto-starting
+            // This ensures game:start is sent immediately
+            const startGameWhenReady = () => {
+                if (this.socket && this.socket.connected) {
+                    console.log('Socket ready - auto-starting game');
+                    this.startGame();
+                } else {
+                    console.log('Waiting for socket connection before auto-start...');
+                    // Wait for socket connect event
+                    if (this.socket) {
+                        this.socket.once('connect', () => {
+                            console.log('Socket connected - now auto-starting game');
+                            setTimeout(() => this.startGame(), 100);
+                        });
+                    }
+                    // Fallback: start anyway after 3 seconds (game will work, just no real-time)
+                    setTimeout(() => {
+                        if (!this.gameActive) {
+                            console.log('Socket timeout - starting game anyway');
+                            this.startGame();
+                        }
+                    }, 3000);
+                }
+            };
+            
+            // Give a small delay for socket initialization
+            setTimeout(startGameWhenReady, 300);
         }
     }
 
