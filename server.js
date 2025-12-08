@@ -857,52 +857,66 @@ io.on('connection', (socket) => {
 
     // Player completes game
     socket.on('game:complete', (data) => {
-        const player = activePlayers.get(socket.id);
-        if (player) {
+        let player = activePlayers.get(socket.id);
+        
+        // If player not in activePlayers, create them now (handles case where game:start was missed)
+        if (!player) {
+            console.log(`Player not found in activePlayers, creating from game:complete data: ${data.name}`);
+            player = {
+                id: socket.id,
+                name: data.name || `Agent_${socket.id.slice(0, 4)}`,
+                email: data.email || '',
+                score: data.score || 0,
+                vaults: data.vaultsCompleted || data.vaults || 0,
+                startTime: Date.now() - 180000, // Assume 3 min game
+                isPlaying: false,
+                won: data.won || false
+            };
+            // Don't add to activePlayers since game is over
+            totalPlayersEver++;
+        } else {
             player.score = data.score;
             player.vaults = data.vaultsCompleted || data.vaults;
             player.won = data.won || false;
             player.isPlaying = false;
-
-            // Calculate time taken
-            const timeTaken = Math.round((Date.now() - player.startTime) / 1000);
-            
-            // Save game completion to CSV
-            saveGameCompletion(
-                socket.id,
-                player.name,
-                player.email || data.email || '',
-                player.score,
-                player.vaults,
-                data.won ? 'Yes' : 'No',
-                timeTaken
-            );
-
-            // Add to permanent leaderboard with all details
-            addToLeaderboard(player);
-
-            // Get player's rank
-            const rank = getPlayerRank(player.score);
-
-            // Send final results to player
-            socket.emit('game:result', {
-                rank: rank,
-                totalPlayers: leaderboard.length,
-                top: getTopLeaderboard(10),
-                nearbyPlayers: getLeaderboardAroundPlayer(socket.id)
-            });
-
-            // Remove from active players
-            activePlayers.delete(socket.id);
-
-            // IMMEDIATE broadcast - force update without throttling
-            // This ensures first game scores show up immediately
-            broadcastLeaderboard();
-            
-            console.log(`Game completed: ${player.name} - Score: ${player.score}, Rank: ${rank}, Leaderboard size: ${leaderboard.length}`);
-        } else {
-            console.log(`Game complete received but player not found: ${socket.id}`);
         }
+
+        // Calculate time taken
+        const timeTaken = Math.round((Date.now() - player.startTime) / 1000);
+        
+        // Save game completion to CSV
+        saveGameCompletion(
+            socket.id,
+            player.name,
+            player.email || data.email || '',
+            player.score,
+            player.vaults,
+            data.won ? 'Yes' : 'No',
+            timeTaken
+        );
+
+        // Add to permanent leaderboard with all details
+        addToLeaderboard(player);
+
+        // Get player's rank
+        const rank = getPlayerRank(player.score);
+
+        // Send final results to player
+        socket.emit('game:result', {
+            rank: rank,
+            totalPlayers: leaderboard.length,
+            top: getTopLeaderboard(10),
+            nearbyPlayers: getLeaderboardAroundPlayer(socket.id)
+        });
+
+        // Remove from active players
+        activePlayers.delete(socket.id);
+
+        // IMMEDIATE broadcast - force update without throttling
+        // This ensures first game scores show up immediately
+        broadcastLeaderboard();
+        
+        console.log(`Game completed: ${player.name} - Score: ${player.score}, Rank: ${rank}, Leaderboard size: ${leaderboard.length}`);
     });
 
     // Player disconnects
