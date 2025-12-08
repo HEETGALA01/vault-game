@@ -836,7 +836,9 @@ io.on('connection', (socket) => {
         // Notify admins
         broadcastToAdmins('player:joined', { name: playerData.name, id: socket.id });
 
-        scheduleBroadcast();
+        // IMMEDIATE broadcast to update admin dashboard with new player
+        broadcastLeaderboard();
+        
         console.log(`Game started: ${playerData.name} (Active: ${activePlayers.size})`);
     });
 
@@ -893,10 +895,13 @@ io.on('connection', (socket) => {
             // Remove from active players
             activePlayers.delete(socket.id);
 
-            // Broadcast updated leaderboard
-            scheduleBroadcast();
+            // IMMEDIATE broadcast - force update without throttling
+            // This ensures first game scores show up immediately
+            broadcastLeaderboard();
             
-            console.log(`Game completed: ${player.name} - Score: ${player.score}, Rank: ${rank}`);
+            console.log(`Game completed: ${player.name} - Score: ${player.score}, Rank: ${rank}, Leaderboard size: ${leaderboard.length}`);
+        } else {
+            console.log(`Game complete received but player not found: ${socket.id}`);
         }
     });
 
