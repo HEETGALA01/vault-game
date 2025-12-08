@@ -120,19 +120,27 @@ class AdminDashboard {
     }
 
     initSocket() {
-        // IMPORTANT: Update this URL after deploying your server to Render/Railway/Heroku
-        // Must match the same URL used in game.js
-        const PRODUCTION_SERVER_URL = 'https://vault-game-wnyu.onrender.com'; // Render server URL
+        // Server URL configuration
+        // When hosted on Render/same server: use current host
+        // When hosted separately (Netlify): use PRODUCTION_SERVER_URL
+        const PRODUCTION_SERVER_URL = 'https://vault-game-1.onrender.com'; // Render server URL
         
         let serverUrl;
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            // Local development
             serverUrl = `http://${window.location.hostname}:3000`;
+        } else if (window.location.hostname.includes('onrender.com')) {
+            // Hosted on Render - use same origin
+            serverUrl = window.location.origin;
         } else if (PRODUCTION_SERVER_URL) {
+            // Hosted elsewhere (Netlify) - use production server
             serverUrl = PRODUCTION_SERVER_URL;
         } else {
             this.addLog('error', 'No server configured! Set PRODUCTION_SERVER_URL in admin.js');
             return;
         }
+        
+        console.log('Admin connecting to server:', serverUrl);
 
         this.socket = io(serverUrl, {
             transports: ['websocket', 'polling'],

@@ -313,17 +313,20 @@ class VaultBreaker {
 
     initSocket() {
         try {
-            // IMPORTANT: Update this URL after deploying your server to Render/Railway/Heroku
-            // For local development: leave as is
-            // For production: replace with your deployed server URL like 'https://your-server.onrender.com'
-            const PRODUCTION_SERVER_URL = 'https://vault-game-wnyu.onrender.com'; // Render server URL
+            // Server URL configuration
+            // When hosted on Render/same server: use current host
+            // When hosted separately (Netlify): use PRODUCTION_SERVER_URL
+            const PRODUCTION_SERVER_URL = 'https://vault-game-1.onrender.com'; // Render server URL
             
             let serverUrl;
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                 // Local development
                 serverUrl = `http://${window.location.hostname}:3000`;
+            } else if (window.location.hostname.includes('onrender.com')) {
+                // Hosted on Render - use same origin
+                serverUrl = window.location.origin;
             } else if (PRODUCTION_SERVER_URL) {
-                // Production with deployed server
+                // Hosted elsewhere (Netlify) - use production server
                 serverUrl = PRODUCTION_SERVER_URL;
             } else {
                 // No server configured - run in offline mode
@@ -332,6 +335,8 @@ class VaultBreaker {
                 this.offlineMode = true;
                 return;
             }
+            
+            console.log('Connecting to server:', serverUrl);
             
             this.socket = io(serverUrl, {
                 transports: ['websocket', 'polling'],
