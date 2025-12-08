@@ -122,7 +122,7 @@ class AdminDashboard {
     initSocket() {
         // IMPORTANT: Update this URL after deploying your server to Render/Railway/Heroku
         // Must match the same URL used in game.js
-        const PRODUCTION_SERVER_URL = ''; // <-- PUT YOUR DEPLOYED SERVER URL HERE (e.g., 'https://vault-breaker-server.onrender.com')
+        const PRODUCTION_SERVER_URL = 'https://vault-game-wnyu.onrender.com'; // Render server URL
         
         let serverUrl;
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
