@@ -62,6 +62,33 @@
             object-fit: cover;
         }
 
+        /* Hide all native video controls on iOS */
+        video::-webkit-media-controls {
+            display: none !important;
+            -webkit-appearance: none;
+        }
+        video::-webkit-media-controls-panel {
+            display: none !important;
+            -webkit-appearance: none;
+        }
+        video::-webkit-media-controls-play-button {
+            display: none !important;
+            -webkit-appearance: none;
+        }
+        video::-webkit-media-controls-start-playback-button {
+            display: none !important;
+            -webkit-appearance: none;
+        }
+        video::-webkit-media-controls-enclosure {
+            display: none !important;
+        }
+        video::--webkit-media-controls-overlay-play-button {
+            display: none !important;
+        }
+        video::-internal-media-controls-overlay-cast-button {
+            display: none !important;
+        }
+
         .camera-container canvas {
             display: none;
         }
@@ -432,7 +459,16 @@
         </div>
 
         <div class="camera-container">
-            <video id="camera-feed" autoplay playsinline></video>
+            <video id="camera-feed" 
+                   autoplay 
+                   playsinline 
+                   muted 
+                   disablePictureInPicture 
+                   disableRemotePlayback
+                   webkit-playsinline="true"
+                   x5-playsinline="true"
+                   controls="false"
+                   style="pointer-events: none; -webkit-media-controls-panel: none;"></video>
             <canvas id="photo-canvas"></canvas>
             <img id="captured-image" class="captured-image" alt="Captured face">
             <div class="scan-overlay" id="scan-overlay">

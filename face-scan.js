@@ -59,9 +59,57 @@ class FaceScan {
     async initCamera() {
         const video = document.getElementById('camera-feed');
         const errorMessage = document.getElementById('error-message');
+        const cameraContainer = document.querySelector('.camera-container');
 
         try {
-            // iOS Safari requires specific constraints
+            // Detect iOS version
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const iOSVersion = isIOS ? parseFloat(
+                ('' + (/CPU.*OS ([0-9_]{1,5})|(CPU like).*AppleWebKit.*Mobile/i.exec(navigator.userAgent) || [0,''])[1])
+                .replace('undefined', '3_2').replace('_', '.').replace('_', '')
+            ) || false : false;
+            
+            // For iOS 18.1+, hide video and use direct image capture
+            if (isIOS && iOSVersion >= 18.1) {
+                console.log('iOS 18.1+ detected - using direct image capture mode');
+                
+                // Hide video element completely
+                video.style.display = 'none';
+                
+                // Create a placeholder message
+                const placeholder = document.createElement('div');
+                placeholder.id = 'camera-placeholder';
+                placeholder.style.cssText = `
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    text-align: center;
+                    color: #fff;
+                    font-size: 1.2rem;
+                    z-index: 10;
+                `;
+                placeholder.innerHTML = '📷<br>Camera Ready<br><small>Tap Scan Face</small>';
+                cameraContainer.appendChild(placeholder);
+                
+                // Request camera access but don't show video
+                const constraints = {
+                    video: { 
+                        facingMode: 'user',
+                        width: { ideal: 640 },
+                        height: { ideal: 640 }
+                    },
+                    audio: false
+                };
+                
+                this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                console.log('Camera access granted for iOS 18.1+');
+                
+                // Don't show video, just keep stream ready for capture
+                return;
+            }
+            
+            // Standard video mode for other devices
             const constraints = {
                 video: { 
                     facingMode: 'user',
@@ -79,6 +127,14 @@ class FaceScan {
             video.setAttribute('autoplay', '');
             video.setAttribute('playsinline', '');
             video.setAttribute('muted', '');
+            video.setAttribute('webkit-playsinline', 'true');
+            video.setAttribute('x5-playsinline', 'true');
+            video.setAttribute('disablePictureInPicture', '');
+            video.setAttribute('disableRemotePlayback', '');
+            video.controls = false;
+            
+            // Force hide controls via style
+            video.style.pointerEvents = 'none';
             
             // Wait for video to be ready
             video.onloadedmetadata = () => {
@@ -250,7 +306,87 @@ class FaceScan {
         const captureBtn = document.getElementById('capture-btn');
         const scanOverlay = document.getElementById('scan-overlay');
         const errorMessage = document.getElementById('error-message');
+        
+        // Detect iOS 18.1+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const iOSVersion = isIOS ? parseFloat(
+            ('' + (/CPU.*OS ([0-9_]{1,5})|(CPU like).*AppleWebKit.*Mobile/i.exec(navigator.userAgent) || [0,''])[1])
+            .replace('undefined', '3_2').replace('_', '.').replace('_', '')
+        ) || false : false;
+        
+        // For iOS 18.1+, use ImageCapture API directly
+        if (isIOS && iOSVersion >= 18.1 && this.stream) {
+            try {
+                console.log('iOS 18.1+ - Using direct image capture');
+                
+                const track = this.stream.getVideoTracks()[0];
+                const imageCapture = new ImageCapture(track);
+                
+                // Capture photo directly
+                const blob = await imageCapture.takePhoto();
+                
+                // Convert blob to canvas
+                const img = new Image();
+                img.src = URL.createObjectURL(blob);
+                
+                await new Promise((resolve) => {
+                    img.onload = () => {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        URL.revokeObjectURL(img.src);
+                        resolve();
+                    };
+                });
+                
+                // Check for face
+                const hasFace = await this.detectFace(canvas);
+                
+                if (!hasFace) {
+                    errorMessage.textContent = '😕 No face detected! Please try again.';
+                    errorMessage.classList.add('active');
+                    setTimeout(() => errorMessage.classList.remove('active'), 3000);
+                    return;
+                }
+                
+                // Face detected - proceed
+                errorMessage.classList.remove('active');
+                this.capturedImage = canvas.toDataURL('image/jpeg', 0.8);
+                
+                // Show captured image
+                capturedImg.src = this.capturedImage;
+                capturedImg.style.display = 'block';
+                
+                // Remove placeholder
+                const placeholder = document.getElementById('camera-placeholder');
+                if (placeholder) placeholder.remove();
+                
+                // Stop camera
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+                
+                // Show scanning animation
+                scanOverlay.classList.add('active');
+                captureBtn.textContent = '✅ FACE CAPTURED';
+                captureBtn.classList.add('captured');
+                captureBtn.disabled = true;
+                
+                setTimeout(() => {
+                    scanOverlay.classList.remove('active');
+                    this.requestPrediction();
+                }, 2000);
+                
+                return;
+                
+            } catch (err) {
+                console.error('iOS image capture error:', err);
+                // Fall back to standard method
+            }
+        }
 
+        // Standard video capture method
         // Set canvas size
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 640;
