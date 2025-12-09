@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
 const OpenAI = require('openai');
+const db = require('./database');
 
 // Initialize OpenAI
 let openai = null;
@@ -27,6 +28,12 @@ if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_ap
 
 const app = express();
 const server = http.createServer(app);
+
+// Initialize database
+db.initDatabase().catch(err => {
+    console.error('Failed to initialize database:', err);
+    console.log('⚠️ Server running without database');
+});
 
 // Configure Socket.io for high concurrency
 const io = new Server(server, {
@@ -50,11 +57,13 @@ const io = new Server(server, {
 app.use(express.static(path.join(__dirname)));
 
 // Health check API endpoint (for monitoring and deployment platforms)
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+    const dbHealthy = await db.healthCheck();
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
+        database: dbHealthy ? 'connected' : 'disconnected',
         activePlayers: activePlayers ? activePlayers.size : 0,
         totalPlayers: totalPlayersEver || 0,
         gamesCompleted: gamesCompletedToday || 0,
@@ -66,19 +75,27 @@ app.get('/api/health', (req, res) => {
 });
 
 // API endpoint to get all recorded data (for verification)
-app.get('/api/data', (req, res) => {
+app.get('/api/data', async (req, res) => {
     const password = req.query.password;
     if (password !== 'admin123') {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    res.json({
-        leaderboard: leaderboard,
-        totalPlayers: totalPlayersEver,
-        gamesCompleted: gamesCompletedToday,
-        activePlayers: Array.from(activePlayers.values()),
-        serverStartTime: new Date().toISOString()
-    });
+    try {
+        const leaderboardData = await db.getLeaderboard(100);
+        const allSessions = await db.getAllGameSessions(1000);
+        
+        res.json({
+            leaderboard: leaderboardData,
+            allSessions: allSessions,
+            totalPlayers: totalPlayersEver,
+            gamesCompleted: gamesCompletedToday,
+            activePlayers: Array.from(activePlayers.values()),
+            serverStartTime: new Date().toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch data', details: err.message });
+    }
 });
 
 // API endpoint to download CSV files
@@ -809,7 +826,7 @@ io.on('connection', (socket) => {
     });
 
     // Player starts game
-    socket.on('game:start', (data) => {
+    socket.on('game:start', async (data) => {
         const playerData = {
             id: socket.id,
             name: data.name || `Agent_${socket.id.slice(0, 4)}`,
@@ -822,6 +839,14 @@ io.on('connection', (socket) => {
         };
 
         activePlayers.set(socket.id, playerData);
+        
+        // Save to database
+        try {
+            await db.createGameSession(playerData.name, playerData.email);
+            console.log(`✅ Game session created in DB for ${playerData.name}`);
+        } catch (err) {
+            console.error('Failed to create game session in DB:', err);
+        }
         
         // Save player login to CSV
         const clientIP = socket.handshake.address || socket.request.connection.remoteAddress || 'unknown';
@@ -856,7 +881,7 @@ io.on('connection', (socket) => {
     });
 
     // Player completes game
-    socket.on('game:complete', (data) => {
+    socket.on('game:complete', async (data) => {
         let player = activePlayers.get(socket.id);
         
         // If player not in activePlayers, create them now (handles case where game:start was missed)
@@ -874,6 +899,13 @@ io.on('connection', (socket) => {
             };
             // Don't add to activePlayers since game is over
             totalPlayersEver++;
+            
+            // Create game session in DB for missed start
+            try {
+                await db.createGameSession(player.name, player.email);
+            } catch (err) {
+                console.error('Failed to create missed game session:', err);
+            }
         } else {
             player.score = data.score;
             player.vaults = data.vaultsCompleted || data.vaults;
@@ -883,6 +915,19 @@ io.on('connection', (socket) => {
 
         // Calculate time taken
         const timeTaken = Math.round((Date.now() - player.startTime) / 1000);
+        
+        // Save to database
+        try {
+            await db.completeGameSession(
+                player.email || data.email || '',
+                player.score,
+                player.vaults,
+                player.won
+            );
+            console.log(`✅ Game completed in DB for ${player.name} - Score: ${player.score}`);
+        } catch (err) {
+            console.error('Failed to complete game session in DB:', err);
+        }
         
         // Save game completion to CSV
         saveGameCompletion(
