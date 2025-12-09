@@ -11,7 +11,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const OpenAI = require('openai');
 
 // Initialize OpenAI
@@ -23,6 +23,15 @@ if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_ap
     console.log('✅ OpenAI API configured');
 } else {
     console.log('⚠️ OpenAI API not configured. Using fallback predictions.');
+}
+
+// Initialize Resend for emails
+let resend = null;
+if (process.env.RESEND_API_KEY) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+    console.log('✅ Resend email API configured');
+} else {
+    console.log('⚠️ Resend not configured. Add RESEND_API_KEY to environment variables');
 }
 
 const app = express();
@@ -121,38 +130,21 @@ let totalPlayersEver = 0;
 let gamesCompletedToday = 0;
 
 // ========================================
-// EMAIL CONFIGURATION
+// EMAIL CONFIGURATION (RESEND)
 // ========================================
 
-// Create email transporter
-let emailTransporter = null;
-
-function initEmailTransporter() {
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-        emailTransporter = nodemailer.createTransport({
-            service: process.env.EMAIL_SERVICE || 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
-        });
-        
-        // Verify connection
-        emailTransporter.verify((error, success) => {
-            if (error) {
-                console.log('❌ Email configuration error:', error.message);
-                emailTransporter = null;
-            } else {
-                console.log('✅ Email server is ready to send messages');
-            }
-        });
-    } else {
-        console.log('⚠️ Email not configured. Add EMAIL_USER and EMAIL_PASS to .env file');
-    }
-}
-
-// Initialize email on startup
-initEmailTransporter();
+// Email sending state
+let emailSendingInProgress = false;
+let emailProgress = {
+    total: 0,
+    sent: 0,
+    failed: 0,
+    remaining: 0,
+    failedPlayers: [],
+    currentPlayer: '',
+    startTime: null,
+    isRunning: false
+};
 
 // Generate HTML email template
 function generateScoreEmail(player, rank, totalPlayers) {
@@ -221,10 +213,10 @@ function generateScoreEmail(player, rank, totalPlayers) {
     `;
 }
 
-// Send email to a single player
+// Send email to a single player using Resend
 async function sendScoreEmail(player, rank, totalPlayers) {
-    if (!emailTransporter) {
-        return { success: false, error: 'Email not configured' };
+    if (!resend) {
+        return { success: false, error: 'Resend not configured' };
     }
     
     if (!player.email || player.email === '-') {
@@ -232,32 +224,28 @@ async function sendScoreEmail(player, rank, totalPlayers) {
     }
     
     try {
-        const mailOptions = {
-            from: `"${process.env.EMAIL_FROM_NAME || 'Vault Breaker'}" <${process.env.EMAIL_USER}>`,
-            to: player.email,
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+        const fromName = process.env.EMAIL_FROM_NAME || 'Vault Breaker';
+        
+        const { data, error } = await resend.emails.send({
+            from: `${fromName} <${fromEmail}>`,
+            to: [player.email],
             subject: `🔐 Vault Breaker - Your Score: ${player.score} | Rank #${rank}`,
             html: generateScoreEmail(player, rank, totalPlayers)
-        };
+        });
         
-        await emailTransporter.sendMail(mailOptions);
+        if (error) {
+            console.log(`Email error for ${player.name}:`, error);
+            return { success: false, error: error.message || 'Send failed' };
+        }
+        
+        console.log(`Email sent to ${player.name} (${player.email}), ID: ${data?.id}`);
         return { success: true };
     } catch (error) {
+        console.error(`Email exception for ${player.name}:`, error);
         return { success: false, error: error.message };
     }
 }
-
-// Email sending state
-let emailSendingInProgress = false;
-let emailProgress = {
-    total: 0,
-    sent: 0,
-    failed: 0,
-    remaining: 0,
-    failedPlayers: [], // Players who failed to receive email
-    currentPlayer: '',
-    startTime: null,
-    isRunning: false
-};
 
 const EMAIL_PROGRESS_FILE = path.join(__dirname, 'email_progress.json');
 
@@ -307,8 +295,8 @@ async function sendEmailWithRetry(player, rank, totalPlayers, maxRetries = 3) {
 
 // Send emails to all players with progress tracking
 async function sendEmailsToAllPlayers(socket, startFromIndex = 0) {
-    if (!emailTransporter) {
-        return { success: false, sent: 0, failed: 0, error: 'Email not configured' };
+    if (!resend) {
+        return { success: false, sent: 0, failed: 0, error: 'Resend not configured. Add RESEND_API_KEY to environment.' };
     }
     
     if (emailSendingInProgress) {
@@ -402,8 +390,8 @@ async function sendEmailsToAllPlayers(socket, startFromIndex = 0) {
 
 // Retry failed emails only
 async function retryFailedEmails(socket) {
-    if (!emailTransporter) {
-        return { success: false, error: 'Email not configured' };
+    if (!resend) {
+        return { success: false, error: 'Resend not configured. Add RESEND_API_KEY to environment.' };
     }
     
     if (emailSendingInProgress) {
