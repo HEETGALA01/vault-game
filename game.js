@@ -413,9 +413,29 @@ class VaultBreaker {
     initAudio() {
         this.audioContext = null;
         try {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // iOS requires webkit prefix
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                this.audioContext = new AudioContext();
+                
+                // iOS Safari requires audio context to be resumed after user gesture
+                // We'll resume it on first user interaction
+                const resumeAudio = () => {
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                    }
+                    // Remove listeners after first interaction
+                    document.removeEventListener('touchstart', resumeAudio);
+                    document.removeEventListener('touchend', resumeAudio);
+                    document.removeEventListener('click', resumeAudio);
+                };
+                
+                document.addEventListener('touchstart', resumeAudio, { passive: true });
+                document.addEventListener('touchend', resumeAudio, { passive: true });
+                document.addEventListener('click', resumeAudio);
+            }
         } catch (e) {
-            console.log('Audio not supported');
+            console.log('Audio not supported:', e);
         }
     }
 

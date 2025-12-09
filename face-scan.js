@@ -39,23 +39,55 @@ class FaceScan {
         const errorMessage = document.getElementById('error-message');
 
         try {
-            this.stream = await navigator.mediaDevices.getUserMedia({
+            // iOS Safari requires specific constraints
+            const constraints = {
                 video: { 
                     facingMode: 'user',
-                    width: { ideal: 640 },
-                    height: { ideal: 640 }
+                    width: { ideal: 640, max: 1280 },
+                    height: { ideal: 640, max: 1280 }
                 },
                 audio: false
-            });
+            };
+            
+            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
             
             video.srcObject = this.stream;
             
+            // iOS Safari requires these attributes
+            video.setAttribute('autoplay', '');
+            video.setAttribute('playsinline', '');
+            video.setAttribute('muted', '');
+            
+            // Wait for video to be ready
             video.onloadedmetadata = () => {
-                video.play();
+                video.play().catch(err => {
+                    console.log('Video play error (will retry on user interaction):', err);
+                });
             };
+            
+            // iOS sometimes needs a user gesture to start video
+            const startVideo = () => {
+                video.play().catch(() => {});
+                document.removeEventListener('touchstart', startVideo);
+                document.removeEventListener('click', startVideo);
+            };
+            document.addEventListener('touchstart', startVideo, { passive: true });
+            document.addEventListener('click', startVideo);
+            
         } catch (err) {
             console.error('Camera error:', err);
-            errorMessage.textContent = '📷 Camera access denied. Please allow camera access and refresh the page.';
+            
+            // More specific error messages
+            let errorText = '📷 Camera access denied. Please allow camera access and refresh the page.';
+            if (err.name === 'NotAllowedError') {
+                errorText = '📷 Camera permission denied. Please go to Settings > Safari > Camera and allow access.';
+            } else if (err.name === 'NotFoundError') {
+                errorText = '📷 No camera found on this device.';
+            } else if (err.name === 'NotReadableError') {
+                errorText = '📷 Camera is in use by another app. Please close other apps and try again.';
+            }
+            
+            errorMessage.textContent = errorText;
             errorMessage.classList.add('active');
             document.getElementById('capture-btn').disabled = true;
         }
